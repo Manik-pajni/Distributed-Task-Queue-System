@@ -113,7 +113,4 @@ Returns jobs that were moved to the dead-letter queue (`failedJobsQueue`) after 
 curl -sS http://localhost:3000/jobs/failed
 ```
 
-## Bull Board screenshot
-
-![Bull Board screenshot placeholder](docs/bull-board-screenshot.png)
 
