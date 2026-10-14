@@ -1,43 +1,41 @@
-# Distributed Task Queue (Node + Bull + Redis)
+# Distributed task queue
 
-This project is a distributed task queue system built with Express and Bull (backed by Redis).  
-It exposes a simple REST API to enqueue jobs with priorities and provides a Bull Board dashboard to monitor queues.
+Express API plus Bull queues on Redis, with three workers: email, report, and export.
 
-## Tech stack
+## Stack
 
-- Node.js
+- Node
 - Express
-- Bull (Redis-backed job queue)
+- Bull
 - Redis
-- Bull Board (`@bull-board/express`, `@bull-board/api`)
+- Bull Board
+- ioredis
+- dotenv
 
-## Run locally
+Tests use `node:test`.
 
-1. Start Redis:
+## Run
 
-```bash
-redis-server
-```
-
-2. Configure env:
+Redis, if the container already exists:
 
 ```bash
-cp .env.example .env
+docker start jobqueue-redis
 ```
 
-3. Install dependencies:
+One time, if that container is missing:
+
+```bash
+docker run -d --name jobqueue-redis -p 6379:6379 redis
+```
+
+`redis-server` works too if you have it installed. Don't run both on port 6379.
 
 ```bash
 npm install
-```
-
-4. Start the API:
-
-```bash
 npm start
 ```
 
-5. Start workers (in separate terminals):
+Workers, each in its own terminal:
 
 ```bash
 npm run workers:email
@@ -45,72 +43,60 @@ npm run workers:report
 npm run workers:export
 ```
 
-- API base: `http://localhost:3000`
-- Bull Board: `http://localhost:3000/admin/queues`
+`npm run dev` uses nodemon.
 
-## API endpoints (with examples)
+- API: http://localhost:3000
+- Bull Board: http://localhost:3000/admin/queues
 
-### POST `/jobs/email`
+## Endpoints
 
-Enqueue an email job. `priority` is required (1 = highest, 10 = lowest).
+`priority` is 1-10. 1 is highest. A POST returns `{ jobId, queue }`.
 
 ```bash
 curl -sS -X POST http://localhost:3000/jobs/email \
   -H "Content-Type: application/json" \
-  -d '{
-    "userId": "u_123",
-    "email": "user@example.com",
-    "subject": "Welcome!",
-    "priority": 1
-  }'
+  -d '{"userId":"u_123","email":"user@example.com","subject":"Welcome!","priority":1}'
 ```
 
-### POST `/jobs/report`
-
-```bash
-curl -sS -X POST http://localhost:3000/jobs/report \
-  -H "Content-Type: application/json" \
-  -d '{
-    "reportId": "r_456",
-    "type": "monthly",
-    "priority": 5
-  }'
-```
-
-### POST `/jobs/export`
-
-```bash
-curl -sS -X POST http://localhost:3000/jobs/export \
-  -H "Content-Type: application/json" \
-  -d '{
-    "tableId": "t_789",
-    "format": "csv",
-    "priority": 10
-  }'
-```
-
-### GET `/jobs/:id/status`
-
-Returns job status, progress, attempts, and failure reason (if any).
+- `POST /jobs/email` — userId, email, subject, priority
+- `POST /jobs/report` — reportId, type, priority
+- `POST /jobs/export` — tableId, format, priority
+- `GET /jobs/:id/status` — state, progress, attempts, failed reason
+- `GET /jobs/failed` — jobs copied to `failedJobsQueue`
+- `GET /health` — waiting, active, completed, failed, delayed for the three queues
 
 ```bash
 curl -sS http://localhost:3000/jobs/<JOB_ID>/status
-```
-
-### GET `/health`
-
-Returns queue stats (waiting/active/completed/failed counts) for the 3 primary queues.
-
-```bash
+curl -sS http://localhost:3000/jobs/failed
 curl -sS http://localhost:3000/health
 ```
 
-### GET `/jobs/failed`
+## Behavior
 
-Returns jobs that were moved to the dead-letter queue (`failedJobsQueue`) after exhausting retries.
+5 workers per queue. Retries 3 times with exponential backoff starting at 2000ms. After the last attempt the job is copied to `failedJobsQueue`.
+
+Normal jobs sleep 2s (email), 5s (report), and 3s (export). Jobs with `benchmarkId` sleep 10ms.
+
+## Tests
 
 ```bash
-curl -sS http://localhost:3000/jobs/failed
+npm test
 ```
 
+They use Redis db 15 and a `bull-test` prefix, and will not wipe db 0. Redis has to be up. The API and workers do not need to be running.
 
+## Benchmark
+
+Start Redis, the API, and all three workers first.
+
+```bash
+npm run benchmark
+```
+
+Default is 5000 jobs, HTTP concurrency 20. Flags: `--jobs`, `--concurrency`, `--timeout 0` (no deadline), `--out bench.json` (JSON only).
+
+```bash
+npm run benchmark -- --jobs 5000 --concurrency 20 --timeout 0 --out bench.json
+```
+
+Prints completed/failed/pending, end-to-end jobs/sec, p50/p95/p99 of `finishedOn - submittedAt`, and recovery of every 10th job, which fails once.
