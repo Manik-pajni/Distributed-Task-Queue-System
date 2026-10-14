@@ -8,9 +8,7 @@ const { mountBullBoard } = require('./src/config/bullBoard');
 const jobsRouter = require('./src/routes/jobs');
 const healthRouter = require('./src/routes/health');
 
-async function main() {
-  await assertRedisConnectionOrExit();
-
+function createApp() {
   const app = express();
   app.use(express.json({ limit: '1mb' }));
 
@@ -19,8 +17,6 @@ async function main() {
   app.use('/jobs', jobsRouter);
   app.use('/', healthRouter);
 
-  // Centralized error handler keeps API failures consistent.
-  // We avoid leaking internals while still returning actionable messages.
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
     const status = err.statusCode || 500;
@@ -30,6 +26,13 @@ async function main() {
     });
   });
 
+  return app;
+}
+
+async function main() {
+  await assertRedisConnectionOrExit();
+
+  const app = createApp();
   const port = Number(process.env.PORT || 3000);
   app.listen(port, () => {
     console.log(`API listening on http://localhost:${port}`);
@@ -37,8 +40,12 @@ async function main() {
   });
 }
 
-main().catch((err) => {
-  console.error('Fatal startup error:', err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error('Fatal startup error:', err);
+    process.exit(1);
+  });
+}
+
+module.exports = { createApp };
 

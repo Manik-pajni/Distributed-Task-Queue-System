@@ -2,11 +2,11 @@ const Redis = require('ioredis');
 const { getRedisConfig } = require('./env');
 
 function createRedisClient() {
-  const { host, port } = getRedisConfig();
+  const { host, port, db } = getRedisConfig();
   return new Redis({
     host,
     port,
-    // Keeping connect timeout short makes failures obvious at startup.
+    db,
     connectTimeout: 3000,
     maxRetriesPerRequest: 1,
   });

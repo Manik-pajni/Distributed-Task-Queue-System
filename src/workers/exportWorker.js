@@ -1,48 +1,26 @@
-const { exportQueue, failedJobsQueue } = require('../queues');
+const { exportQueue } = require('../queues');
 const { JOB_TYPES } = require('../jobs/types');
-const { sleep, getJobDurationMs } = require('./_utils');
+const { performJobWork } = require('./_utils');
 const { assertRedisConnectionOrExit } = require('../config/redis');
-
-function attachWorkerTelemetry(queue, jobType) {
-  queue.on('failed', async (job, err) => {
-    console.error(`[${jobType}] job failed`, { jobId: job?.id, error: err?.message || err });
-
-    const maxAttempts = job?.opts?.attempts ?? 1;
-    const attemptsMade = job?.attemptsMade ?? 0;
-    if (attemptsMade >= maxAttempts) {
-      await failedJobsQueue.add(
-        'dead-letter',
-        {
-          originalQueue: queue.name,
-          originalJobId: job?.id,
-          jobType,
-          data: job?.data,
-          failedReason: err?.message || String(err),
-        },
-        { removeOnComplete: true }
-      );
-    }
-  });
-
-  queue.on('completed', (job) => {
-    const durationMs = getJobDurationMs(job);
-    console.log(`[${jobType}] job completed`, { jobId: job.id, durationMs });
-  });
-}
+const { attachWorkerTelemetry } = require('./telemetry');
 
 async function start() {
   await assertRedisConnectionOrExit();
   attachWorkerTelemetry(exportQueue, JOB_TYPES.EXPORT);
 
-  exportQueue.process(5, JOB_TYPES.EXPORT, async (job) => {
+  exportQueue.process(JOB_TYPES.EXPORT, 5, async (job) => {
     try {
+      const queueWaitMs = await performJobWork(job, 3000);
       const { tableId } = job.data;
-      await sleep(3000);
       console.log(`Export for table ${tableId} completed`);
-      return { ok: true };
+      if (queueWaitMs == null) return { ok: true };
+      return { ok: true, queueWaitMs };
     } catch (err) {
       throw err;
     }
+  }).catch((err) => {
+    console.error('Export worker fatal error:', err);
+    process.exit(1);
   });
 
   console.log('Export worker started');

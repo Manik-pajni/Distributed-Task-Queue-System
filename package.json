@@ -9,7 +9,9 @@
     "dev": "nodemon index.js",
     "workers:email": "node src/workers/emailWorker.js",
     "workers:report": "node src/workers/reportWorker.js",
-    "workers:export": "node src/workers/exportWorker.js"
+    "workers:export": "node src/workers/exportWorker.js",
+    "test": "node --test test/validation.test.js test/reliability.test.js",
+    "benchmark": "node scripts/benchmark.js"
   },
   "dependencies": {
     "@bull-board/api": "^6.12.0",

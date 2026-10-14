@@ -20,7 +20,8 @@ function toServerError(publicMessage, details) {
 
 async function addJob(queue, type, data, priority) {
   try {
-    const job = await queue.add(type, data, { priority });
+    const payload = data.benchmarkId ? { ...data, submittedAt: Date.now() } : data;
+    const job = await queue.add(type, payload, { priority });
     return job;
   } catch (err) {
     throw toServerError('Failed to enqueue job', { queue: queue.name, message: err?.message });
@@ -67,8 +68,6 @@ router.get('/:id/status', async (req, res, next) => {
 
     let found = null;
     for (const q of queues) {
-      // We probe multiple queues because job IDs are per-queue in Bull.
-      // This keeps the API ergonomic for clients.
       // eslint-disable-next-line no-await-in-loop
       const job = await q.getJob(id);
       if (job) {

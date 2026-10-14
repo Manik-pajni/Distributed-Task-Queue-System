@@ -1,51 +1,27 @@
-const { emailQueue, failedJobsQueue } = require('../queues');
+const { emailQueue } = require('../queues');
 const { JOB_TYPES } = require('../jobs/types');
-const { sleep, getJobDurationMs } = require('./_utils');
+const { performJobWork } = require('./_utils');
 const { assertRedisConnectionOrExit } = require('../config/redis');
-
-function attachWorkerTelemetry(queue, jobType) {
-  queue.on('failed', async (job, err) => {
-    console.error(`[${jobType}] job failed`, { jobId: job?.id, error: err?.message || err });
-
-    const maxAttempts = job?.opts?.attempts ?? 1;
-    const attemptsMade = job?.attemptsMade ?? 0;
-
-    // Only dead-letter after retries are exhausted to keep the DLQ meaningful.
-    if (attemptsMade >= maxAttempts) {
-      await failedJobsQueue.add(
-        'dead-letter',
-        {
-          originalQueue: queue.name,
-          originalJobId: job?.id,
-          jobType,
-          data: job?.data,
-          failedReason: err?.message || String(err),
-        },
-        { removeOnComplete: true }
-      );
-    }
-  });
-
-  queue.on('completed', (job) => {
-    const durationMs = getJobDurationMs(job);
-    console.log(`[${jobType}] job completed`, { jobId: job.id, durationMs });
-  });
-}
+const { attachWorkerTelemetry } = require('./telemetry');
 
 async function start() {
   await assertRedisConnectionOrExit();
   attachWorkerTelemetry(emailQueue, JOB_TYPES.EMAIL);
 
-  emailQueue.process(5, JOB_TYPES.EMAIL, async (job) => {
+  // other order throws
+  emailQueue.process(JOB_TYPES.EMAIL, 5, async (job) => {
     try {
+      const queueWaitMs = await performJobWork(job, 2000);
       const { email } = job.data;
-      await sleep(2000);
       console.log(`Email sent to ${email}`);
-      return { ok: true };
+      if (queueWaitMs == null) return { ok: true };
+      return { ok: true, queueWaitMs };
     } catch (err) {
-      // Throwing keeps Bull retry/backoff behavior intact.
       throw err;
     }
+  }).catch((err) => {
+    console.error('Email worker fatal error:', err);
+    process.exit(1);
   });
 
   console.log('Email worker started');

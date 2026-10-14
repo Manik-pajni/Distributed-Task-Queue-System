@@ -18,6 +18,30 @@ function validatePriority(priority) {
   return p;
 }
 
+function optionalBenchmarkId(body) {
+  if (!Object.prototype.hasOwnProperty.call(body, 'benchmarkId')) return null;
+  const benchmarkId = body.benchmarkId;
+  if (typeof benchmarkId !== 'string' || benchmarkId.length === 0) {
+    throw toValidationError('Invalid benchmarkId (string required)', { benchmarkId });
+  }
+  return benchmarkId;
+}
+
+function optionalFailOnce(body) {
+  if (!Object.prototype.hasOwnProperty.call(body, 'failOnce')) return false;
+  if (typeof body.failOnce !== 'boolean') {
+    throw toValidationError('Invalid failOnce (boolean required)', { failOnce: body.failOnce });
+  }
+  return body.failOnce;
+}
+
+function withBenchmarkId(payload, body) {
+  const benchmarkId = optionalBenchmarkId(body);
+  if (benchmarkId) payload.benchmarkId = benchmarkId;
+  if (optionalFailOnce(body)) payload.failOnce = true;
+  return payload;
+}
+
 function validateEmailJob(body) {
   if (!isPlainObject(body)) throw toValidationError('Invalid JSON body', {});
   const { userId, email, subject } = body;
@@ -30,7 +54,7 @@ function validateEmailJob(body) {
   if (!subject || typeof subject !== 'string') {
     throw toValidationError('Invalid subject (string required)', { subject });
   }
-  return { userId, email, subject };
+  return withBenchmarkId({ userId, email, subject }, body);
 }
 
 function validateReportJob(body) {
@@ -42,7 +66,7 @@ function validateReportJob(body) {
   if (!type || typeof type !== 'string') {
     throw toValidationError('Invalid type (string required)', { type });
   }
-  return { reportId, type };
+  return withBenchmarkId({ reportId, type }, body);
 }
 
 function validateExportJob(body) {
@@ -54,7 +78,7 @@ function validateExportJob(body) {
   if (!format || typeof format !== 'string') {
     throw toValidationError('Invalid format (string required)', { format });
   }
-  return { tableId, format };
+  return withBenchmarkId({ tableId, format }, body);
 }
 
 module.exports = {
